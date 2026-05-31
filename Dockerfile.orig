@@ -1,0 +1,27 @@
+ARG DEB_TAG=trixie-slim
+FROM docker.io/library/debian:${DEB_TAG} AS getter
+ARG DEB_PACKAGES="ca-certificates wget unzip"
+ARG RELEASE=b1281
+ARG GPU=gfx1151
+
+RUN DEBIAN_FRONTEND=noninteractive apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get -y upgrade \
+ && DEBIAN_FRONTEND=noninteractive apt-get -y install ${DEB_PACKAGES} --no-install-recommends \
+ && mkdir /tmp/llamacpp \
+ && cd /tmp/llamacpp \
+ && wget -nv https://github.com/lemonade-sdk/llamacpp-rocm/releases/download/${RELEASE}/llama-${RELEASE}-ubuntu-rocm-${GPU}-x64.zip \
+ && unzip llama-${RELEASE}-ubuntu-rocm-${GPU}-x64.zip \
+ && chmod 755 llama-*
+
+FROM docker.io/library/debian:${DEB_TAG} AS target
+ARG DEB_TARGET="libatomic1:amd64"
+COPY --from=getter /tmp/llamacpp /opt/llamacpp
+RUN DEBIAN_FRONTEND=noninteractive apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get -y upgrade \
+ && DEBIAN_FRONTEND=noninteractive apt-get -y install ${DEB_TARGET} --no-install-recommends \
+ && apt-get clean \
+ && mkdir -p /usr/local/bin \
+ && rm -rf /var/lib/apt/lists/ \
+ && echo '' >> /etc/profile \
+ && echo 'export "PATH=$PATH:/opt/llamacpp"' >> /etc/profile
+ENV PATH="$PATH:/opt/llamacpp"
