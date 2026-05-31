@@ -28,9 +28,10 @@ RUN cmake -B build -G Ninja \
     -DAMDGPU_TARGETS="${AMDGPU_TARGETS}" \
     -DCMAKE_BUILD_TYPE=Release \
     -DLLAMA_CURL=ON \
-    -DCMAKE_INSTALL_PREFIX=/opt/llamacpp \
  && cmake --build build --target llama-server -j"$(nproc)" \
- && cmake --install build --component llama-server 2>/dev/null || cmake --install build
+ && mkdir -p /opt/llamacpp/bin \
+ && cp build/bin/llama-server /opt/llamacpp/bin/ \
+ && cp -P build/bin/*.so* /opt/llamacpp/bin/
 
 # Runtime : image AMD pre-built (~950MB) — toutes les libs ROCm déjà présentes
 FROM docker.io/library/debian:${DEB_TAG} AS target
