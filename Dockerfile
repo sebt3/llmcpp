@@ -2,6 +2,7 @@
 # Inclut le patch PR#21099 : cache reuse pour modèles hybrides/récurrents (DeltaNet, Qwen3.6)
 # Patch fermé pour raisons de politique (code IA), fix validé — à retirer quand mergé upstream.
 # syntax=docker/dockerfile:1.4
+ARG DEB_TAG=trixie-slim
 FROM rocm/dev-ubuntu-24.04:7.2.4-complete AS builder
 
 ARG AMDGPU_TARGETS=gfx1151
@@ -27,9 +28,17 @@ RUN cmake -B build -G Ninja \
     -DAMDGPU_TARGETS="${AMDGPU_TARGETS}" \
     -DCMAKE_BUILD_TYPE=Release \
     -DLLAMA_CURL=ON \
- && cmake --build build --target llama-server -j"$(nproc)"
+    -DCMAKE_INSTALL_PREFIX=/opt/llamacpp \
+ && cmake --build build --target llama-server -j"$(nproc)" \
+ && cmake --install build --component llama-server 2>/dev/null || cmake --install build
 
 # Runtime : image AMD pre-built (~950MB) — toutes les libs ROCm déjà présentes
-FROM sebt3/llama_test:b1281
-
-COPY --from=builder /src/build/bin/llama-server /opt/llamacpp/llama-server
+FROM docker.io/library/debian:${DEB_TAG} AS target
+ARG DEB_TARGET="libatomic1:amd64"
+RUN DEBIAN_FRONTEND=noninteractive apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get -y upgrade \
+ && DEBIAN_FRONTEND=noninteractive apt-get -y install ${DEB_TARGET} --no-install-recommends \
+ && apt-get clean \
+ && rm -rf /var/lib/apt/lists/
+COPY --from=builder /opt/llamacpp /opt/llamacpp
+ENV PATH="$PATH:/opt/llamacpp/bin"
