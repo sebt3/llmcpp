@@ -32,19 +32,14 @@ RUN cmake -B build -G Ninja \
  && mkdir -p /opt/llamacpp/bin /opt/llamacpp/lib \
  && cp build/bin/llama-server /opt/llamacpp/bin/ \
  && cp -P build/bin/*.so* /opt/llamacpp/bin/ \
- && while true; do \
-      prev=$(find /opt/llamacpp \( -type f -o -type l \) | wc -l); \
-      find /opt/llamacpp/bin /opt/llamacpp/lib -type f \
-        | xargs ldd 2>/dev/null \
-        | awk '/=> \// {print $3}' \
-        | grep '^/opt/rocm' | sort -u \
-        | while read -r dep; do \
-            cp -n "$(readlink -f "$dep")" /opt/llamacpp/lib/ 2>/dev/null || true; \
-            cp -Pn "$dep" /opt/llamacpp/lib/ 2>/dev/null || true; \
-          done; \
-      cur=$(find /opt/llamacpp \( -type f -o -type l \) | wc -l); \
-      [ "$cur" -eq "$prev" ] && break; \
-    done
+ && LD_LIBRARY_PATH="build/bin:/opt/rocm-7.2.4/lib" \
+    ldd build/bin/llama-server \
+    | awk '/=> \// {print $3}' | grep '^/opt/rocm' | sort -u > /tmp/rocm_deps.txt \
+ && while IFS= read -r dep; do \
+      real=$(readlink -f "$dep"); \
+      cp -Pn "$dep" /opt/llamacpp/lib/; \
+      [ "$real" != "$dep" ] && cp -n "$real" /opt/llamacpp/lib/ || true; \
+    done < /tmp/rocm_deps.txt
 
 # Runtime : Debian slim + dépendances système des libs ROCm (bundlées dans /opt/llamacpp/lib)
 FROM docker.io/library/debian:${DEB_TAG} AS target
