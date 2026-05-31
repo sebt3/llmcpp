@@ -40,4 +40,4 @@ jobs:
         push: true
         tags: |
           ${{ github.repository }}:latest
-          ${{ github.repository }}:${{ steps.version.outputs.full }}
+          ${{ github.repository }}:${{ steps.version.outputs.major }}
