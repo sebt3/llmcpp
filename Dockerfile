@@ -31,7 +31,7 @@ RUN cmake -B build -G Ninja \
  && cmake --build build --target llama-server -j"$(nproc)" \
  && mkdir -p /opt/llamacpp \
  && cp build/bin/llama-server /opt/llamacpp/ \
- && cp -P build/bin/*.so* /opt/llamacpp/
+ && cp -P build/bin/*.so* build/bin/*.so /opt/llamacpp/
 
 FROM docker.io/library/debian:${DEB_TAG} AS getter
 ARG DEB_PACKAGES="ca-certificates wget unzip"
