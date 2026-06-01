@@ -29,17 +29,23 @@ RUN cmake -B build -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
     -DLLAMA_CURL=ON \
  && cmake --build build --target llama-server -j"$(nproc)" \
- && mkdir -p /opt/llamacpp/bin /opt/llamacpp/lib \
- && cp build/bin/llama-server /opt/llamacpp/bin/ \
- && cp -P build/bin/*.so* /opt/llamacpp/bin/ \
- && LD_LIBRARY_PATH="build/bin:/opt/rocm-7.2.4/lib" \
-    ldd build/bin/llama-server \
-    | awk '/=> \// {print $3}' | grep '^/opt/rocm' | sort -u > /tmp/rocm_deps.txt \
- && while IFS= read -r dep; do \
-      real=$(readlink -f "$dep"); \
-      cp -Pn "$dep" /opt/llamacpp/lib/; \
-      [ "$real" != "$dep" ] && cp -n "$real" /opt/llamacpp/lib/ || true; \
-    done < /tmp/rocm_deps.txt
+ && mkdir -p /opt/llamacpp \
+ && cp build/bin/llama-server /opt/llamacpp/ \
+ && cp -P build/bin/*.so* /opt/llamacpp/
+
+FROM docker.io/library/debian:${DEB_TAG} AS getter
+ARG DEB_PACKAGES="ca-certificates wget unzip"
+ARG RELEASE=b1285
+ARG GPU=gfx1151
+
+RUN DEBIAN_FRONTEND=noninteractive apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get -y upgrade \
+ && DEBIAN_FRONTEND=noninteractive apt-get -y install ${DEB_PACKAGES} --no-install-recommends \
+ && mkdir /tmp/llamacpp \
+ && cd /tmp/llamacpp \
+ && wget -nv https://github.com/lemonade-sdk/llamacpp-rocm/releases/download/${RELEASE}/llama-${RELEASE}-ubuntu-rocm-${GPU}-x64.zip \
+ && unzip llama-${RELEASE}-ubuntu-rocm-${GPU}-x64.zip \
+ && rm *llama*
 
 # Runtime : Debian slim + dépendances système des libs ROCm (bundlées dans /opt/llamacpp/lib)
 FROM docker.io/library/debian:${DEB_TAG} AS target
@@ -49,6 +55,7 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get -y install ${DEB_TARGET} --no-install-recommends \
  && apt-get clean \
  && rm -rf /var/lib/apt/lists/
+COPY --from=getter /tmp/llamacpp /opt/llamacpp
 COPY --from=builder /opt/llamacpp /opt/llamacpp
-ENV PATH="$PATH:/opt/llamacpp/bin"
-ENV LD_LIBRARY_PATH="/opt/llamacpp/bin:/opt/llamacpp/lib"
+ENV PATH="$PATH:/opt/llamacpp"
+ENV LD_LIBRARY_PATH="/opt/llamacpp"
