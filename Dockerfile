@@ -18,7 +18,7 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get update \
 
 
 FROM docker.io/library/debian:${DEB_TAG} AS target
-ARG DEB_TARGET="libatomic1:amd64"
+ARG DEB_TARGET="libatomic1:amd64 libgomp1:amd64 libstdc++6:amd64 libdrm2:amd64 libdrm-amdgpu1:amd64 libelf1:amd64 libnuma1:amd64 libzstd1:amd64"
 COPY --from=getter /tmp/llamacpp /opt/llamacpp
 COPY --from=built /app /opt/llamacpp
 RUN DEBIAN_FRONTEND=noninteractive apt-get update \
