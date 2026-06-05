@@ -1,7 +1,7 @@
 ARG DEB_TAG=trixie-slim
 FROM docker.io/library/debian:${DEB_TAG} AS getter
 ARG DEB_PACKAGES="ca-certificates wget unzip"
-ARG RELEASE=b1281
+ARG RELEASE=b1285
 ARG GPU=gfx1151
 
 RUN DEBIAN_FRONTEND=noninteractive apt-get update \

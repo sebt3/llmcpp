@@ -1,0 +1,95 @@
+# Stage 1: build llama.cpp against TheRock ROCm for gfx1151 (Strix Halo).
+FROM ubuntu:26.04 AS builder
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ca-certificates curl git \
+      build-essential cmake ninja-build \
+      aria2 tar xz-utils \
+      libatomic1 libnuma-dev libgomp1 libelf1t64 \
+      libdrm-dev zlib1g-dev libssl-dev libcurl4-openssl-dev \
+      libgoogle-perftools4 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /tmp
+ARG ROCM_MAJOR_VER=7
+ARG GFX=gfx1151
+COPY scripts/install_rocm_sdk.sh /tmp/install_rocm_sdk.sh
+RUN chmod +x /tmp/install_rocm_sdk.sh && \
+    ROCM_MAJOR_VER=${ROCM_MAJOR_VER} GFX=${GFX} /tmp/install_rocm_sdk.sh && \
+    rm /tmp/install_rocm_sdk.sh
+
+ENV ROCM_PATH=/opt/rocm \
+    HIP_PATH=/opt/rocm \
+    HIP_PLATFORM=amd \
+    HIPCXX=/opt/rocm/llvm/bin/clang++ \
+    CMAKE_PREFIX_PATH=/opt/rocm \
+    PATH=/opt/rocm/bin:/opt/rocm/llvm/bin:$PATH \
+    LD_LIBRARY_PATH=/opt/rocm/lib:/opt/rocm/lib64:/opt/rocm/llvm/lib
+
+ARG LLAMA_COMMIT=15fa3c493
+RUN git clone https://github.com/ggml-org/llama.cpp.git /opt/llama.cpp
+WORKDIR /opt/llama.cpp
+RUN if [ -n "$LLAMA_COMMIT" ]; then \
+      git checkout "$LLAMA_COMMIT"; \
+    else \
+      echo "Tracking llama.cpp HEAD: $(git rev-parse --short HEAD)"; \
+    fi
+
+RUN export HIP_DEVICE_LIB_PATH=$(find /opt/rocm -type d -name bitcode -print -quit) && \
+    echo "bitcode: $HIP_DEVICE_LIB_PATH" && \
+    cmake -S . -B build -G Ninja \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DGGML_HIP=ON \
+      -DGGML_HIP_ROCWMMA_FATTN=ON \
+      -DGPU_TARGETS=gfx1151 \
+      -DCMAKE_HIP_COMPILER=/opt/rocm/llvm/bin/clang++ \
+      -DCMAKE_C_COMPILER=/opt/rocm/llvm/bin/clang \
+      -DCMAKE_CXX_COMPILER=/opt/rocm/llvm/bin/clang++ \
+      -DCMAKE_INSTALL_PREFIX=/usr/local && \
+    cmake --build build -j 4 && \
+    cmake --install build && \
+    rm -rf /opt/llama.cpp
+
+# Strip ROCm to runtime-only: remove headers, docs, cmake metadata, bitcode
+# (compile-time only), and LLVM compiler executables. Keep llvm/lib — HIP
+# runtime (libamd_comgr.so) links against it dynamically.
+RUN rm -rf \
+      /opt/rocm/include \
+      /opt/rocm/share \
+      /opt/rocm/lib/cmake \
+      /opt/rocm/lib/bitcode \
+      /opt/rocm/llvm/bin \
+      /opt/rocm/llvm/include \
+      /opt/rocm/llvm/share \
+      /opt/rocm/llvm/lib/cmake
+
+# Stage 2: minimal runtime image — inference only, no compiler, no sources.
+FROM ubuntu:26.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ca-certificates \
+      libatomic1 libnuma1 libgomp1 libelf1t64 \
+      libdrm2 zlib1g libcurl4 \
+      libgoogle-perftools4 \
+      procps \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /opt/rocm        /opt/rocm
+COPY --from=builder /usr/local/bin   /usr/local/bin
+COPY --from=builder /usr/local/lib   /usr/local/lib
+
+ENV ROCM_PATH=/opt/rocm \
+    HIP_PATH=/opt/rocm \
+    HIP_PLATFORM=amd \
+    PATH=/opt/rocm/bin:/usr/local/bin:$PATH \
+    LD_LIBRARY_PATH=/usr/local/lib:/opt/rocm/lib:/opt/rocm/lib64:/opt/rocm/llvm/lib \
+    HSA_OVERRIDE_GFX_VERSION=11.5.1
+
+RUN ldconfig
+
+WORKDIR /models
+CMD ["/bin/bash"]
